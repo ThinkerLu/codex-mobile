@@ -1,0 +1,75 @@
+src/server/codexAppServerBridge.ts
+  6feaa5a82fd27ea4 16,5589-5598,8044-8045,8121,8642,8679,8714
+scripts/verify-modern-projects.cjs
+  6feaa5a82fd27ea4 1-63
+src/composables/useNewThreadContext.test.ts
+  6feaa5a82fd27ea4 1-40
+src/App.vue
+  6feaa5a82fd27ea4 1215,1555,2874,2877,3057,3082,3090,3578,3873,3906,4003,4096,4852,4860,4914,4996,5009
+src/server/projectCatalog.test.ts
+  6feaa5a82fd27ea4 2-28
+src/server/projectCatalog.ts
+  6feaa5a82fd27ea4 4-9
+src/composables/useNewThreadContext.ts
+  6feaa5a82fd27ea4 1-18
+tests/projects-sidebar-new-chat/modern-project-catalog.md
+  6feaa5a82fd27ea4 10-11,13-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8-ntes.9",
+  "base_commit_sha": "be1ff85242a1fe8f60b5f573244d47b079d5a795",
+  "prompts": {
+    "6feaa5a82fd27ea4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16490-099f-7433-ac14-9b162fcbd33d",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "luxianke",
+      "messages": [],
+      "total_additions": 195,
+      "total_deletions": 26,
+      "accepted_lines": 193,
+      "overriden_lines": 0,
+      "per_file_stats": {
+        "src/composables/useNewThreadContext.test.ts": {
+          "additions": 40,
+          "accepted_lines": 40
+        },
+        "scripts/verify-modern-projects.cjs": {
+          "additions": 63,
+          "accepted_lines": 63
+        },
+        "tests/projects-sidebar-new-chat/modern-project-catalog.md": {
+          "additions": 5,
+          "deletions": 1,
+          "accepted_lines": 5
+        },
+        "src/server/codexAppServerBridge.ts": {
+          "additions": 19,
+          "deletions": 3,
+          "accepted_lines": 17
+        },
+        "src/composables/useNewThreadContext.ts": {
+          "additions": 18,
+          "accepted_lines": 18
+        },
+        "src/App.vue": {
+          "additions": 17,
+          "deletions": 21,
+          "accepted_lines": 17
+        },
+        "src/server/projectCatalog.ts": {
+          "additions": 6,
+          "accepted_lines": 6
+        },
+        "src/server/projectCatalog.test.ts": {
+          "additions": 27,
+          "deletions": 1,
+          "accepted_lines": 27
+        }
+      }
+    }
+  }
+}
