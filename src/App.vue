@@ -1212,6 +1212,7 @@ import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerTerminal from './components/icons/IconTablerTerminal.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
+import { useNewThreadContext } from './composables/useNewThreadContext'
 import { useMobile } from './composables/useMobile'
 import { useUiLanguage } from './composables/useUiLanguage'
 import { useFeedbackDiagnostics } from './composables/useFeedbackDiagnostics'
@@ -1551,8 +1552,7 @@ const isRouteSyncInProgress = ref(false)
 const directoryTryInFlightKey = ref('')
 let hasPendingRouteSync = false
 const hasInitialized = ref(false)
-const newThreadCwd = ref('')
-const newThreadProjectId = ref<string | undefined>()
+const { cwd: newThreadCwd, projectId: newThreadProjectId, selectFolder: selectNewThreadFolder, setWorktreeCwd } = useNewThreadContext()
 const newThreadRuntime = ref<'local' | 'worktree'>('local')
 const gitRepoStatusByCwd = ref<Record<string, boolean>>({})
 const gitRepoStatusRequestByCwd = new Map<string, Promise<boolean>>()
@@ -2871,12 +2871,10 @@ function resolvePreferredLocalCwd(projectName: string, fallbackCwd = ''): string
 }
 
 function onStartNewThread(projectName: string): void {
-  newThreadProjectId.value = workspaceRootOptionsState.value.projects?.find((item) => item.id === projectName)?.id
+  const projectId = workspaceRootOptionsState.value.projects?.find((item) => item.id === projectName)?.id
   const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
   const projectCwd = resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
-  if (projectCwd) {
-    newThreadCwd.value = projectCwd
-  }
+  selectNewThreadFolder(projectCwd, projectId)
   if (isMobile.value) setSidebarCollapsed(true)
   if (isHomeRoute.value) return
   void router.push({ name: 'home' })
@@ -3056,7 +3054,7 @@ async function onCreateProjectWorktree(projectName: string): Promise<void> {
     })
     if (!normalizedPath) return
 
-    newThreadCwd.value = normalizedPath
+    selectNewThreadFolder(normalizedPath)
     newThreadRuntime.value = 'local'
     pinProjectToTop(getProjectOrderNameForPath(normalizedPath))
     await loadWorkspaceRootOptionsState()
@@ -3081,9 +3079,7 @@ function resolveSelectedThreadProjectCwd(): string {
 
 function onStartNewThreadFromToolbar(): void {
   const resolvedCwd = resolveSelectedThreadProjectCwd()
-  if (resolvedCwd) {
-    newThreadCwd.value = resolvedCwd
-  }
+  selectNewThreadFolder(resolvedCwd)
   newThreadRuntime.value = 'local'
   if (isMobile.value) setSidebarCollapsed(true)
   if (isHomeRoute.value) return
@@ -3091,7 +3087,7 @@ function onStartNewThreadFromToolbar(): void {
 }
 
 function onStartProjectlessNewChat(): void {
-  newThreadCwd.value = ''
+  selectNewThreadFolder('')
   newThreadRuntime.value = 'local'
   if (isMobile.value) setSidebarCollapsed(true)
   if (isHomeRoute.value) return
@@ -3579,7 +3575,7 @@ function scheduleMobileConversationJumpToLatest(): void {
 }
 
 function onSelectNewThreadFolder(cwd: string): void {
-  newThreadCwd.value = cwd.trim()
+  selectNewThreadFolder(cwd)
   createFolderError.value = ''
 }
 
@@ -3874,7 +3870,7 @@ async function onSubmitProjectSetup(): Promise<void> {
         : await createProjectFromSetupModal()
     if (!normalizedPath) return
 
-    newThreadCwd.value = normalizedPath
+    selectNewThreadFolder(normalizedPath)
     pinProjectToTop(getProjectOrderNameForPath(normalizedPath))
     await loadWorkspaceRootOptionsState()
     await refreshDefaultProjectName()
@@ -3907,7 +3903,7 @@ async function finishProjectImport(
     if (!baseDir) return
     const result = await importer(baseDir)
     if (!result.path) return
-    newThreadCwd.value = result.path
+    selectNewThreadFolder(result.path)
     pinProjectToTop(getProjectOrderNameForPath(result.path))
     await loadWorkspaceRootOptionsState()
     await refreshAll({ includeSelectedThreadMessages: false, forceThreadRefresh: true })
@@ -4004,7 +4000,7 @@ async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value):
       return
     }
 
-    newThreadCwd.value = normalizedPath
+    selectNewThreadFolder(normalizedPath)
     pinProjectToTop(getProjectOrderNameForPath(normalizedPath))
     await loadWorkspaceRootOptionsState()
     await refreshAll({ includeSelectedThreadMessages: false, forceThreadRefresh: true })
@@ -4097,7 +4093,7 @@ async function applyLaunchProjectPathFromUrl(): Promise<boolean> {
       label: '',
     })
     if (!normalizedPath) return false
-    newThreadCwd.value = normalizedPath
+    selectNewThreadFolder(normalizedPath)
     pinProjectToTop(getProjectOrderNameForPath(normalizedPath))
     await router.replace({ name: 'home' })
     await loadWorkspaceRootOptionsState()
@@ -4853,7 +4849,7 @@ watch(
   () => newThreadFolderOptions.value,
   (options) => {
     if (options.length === 0) {
-      newThreadCwd.value = ''
+      selectNewThreadFolder('')
       void refreshDefaultProjectName()
       return
     }
@@ -4861,7 +4857,7 @@ watch(
     if (selected) {
       const hasSelected = options.some((option) => option.value === selected)
       if (!hasSelected) {
-        newThreadCwd.value = ''
+        selectNewThreadFolder('')
       }
     }
     void refreshDefaultProjectName()
@@ -4915,7 +4911,7 @@ watch(
         const fallbackProjectName = selectedThread.value?.projectName ?? getPathLeafName(current)
         const localCwd = resolvePreferredLocalCwd(fallbackProjectName, '')
         if (localCwd) {
-          newThreadCwd.value = localCwd
+          setWorktreeCwd(localCwd)
         }
       }
       return
@@ -4997,7 +4993,7 @@ async function submitFirstMessageForNewThread(
       try {
         const created = await createWorktree(newThreadCwd.value, newWorktreeBaseBranch.value)
         targetCwd = created.cwd
-        newThreadCwd.value = created.cwd
+        setWorktreeCwd(created.cwd)
         worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
       } catch {
         worktreeInitStatus.value = {
@@ -5010,7 +5006,7 @@ async function submitFirstMessageForNewThread(
     } else if (!targetCwd.trim()) {
       const directory = await createProjectlessThreadDirectory(text)
       targetCwd = directory.cwd
-      newThreadCwd.value = directory.cwd
+      selectNewThreadFolder(directory.cwd)
     }
     const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments, selectedProject?.id)
     if (!threadId) return

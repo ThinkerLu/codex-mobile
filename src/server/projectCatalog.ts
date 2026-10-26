@@ -1,6 +1,12 @@
 export type CatalogProject = { id: string; name: string; rootPaths: string[] }
 type Rpc = (method: string, params: unknown) => Promise<unknown>
 
+export async function ensureCatalogProjectRoot(rpc: Rpc, path: string, name: string, idempotencyKey: string): Promise<void> {
+  const projects = await readProjectCatalog(rpc)
+  if (projects === undefined || projects.some((project) => project.rootPaths.includes(path))) return
+  await rpc('project/create', { idempotencyKey, name, roots: [{ path }] })
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown> : null

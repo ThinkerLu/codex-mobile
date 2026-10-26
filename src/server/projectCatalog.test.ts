@@ -1,5 +1,31 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mapThreadProjectIds, readProjectCatalog } from './projectCatalog.js'
+import { ensureCatalogProjectRoot, mapThreadProjectIds, readProjectCatalog } from './projectCatalog.js'
+
+describe('ensureCatalogProjectRoot', () => {
+  it('registers a newly opened root in the modern catalog', async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({ data: [], nextCursor: null }).mockResolvedValueOnce({ project: { id: 'new' } })
+    await ensureCatalogProjectRoot(rpc, '/new/project', 'Project', 'request-key')
+    expect(rpc.mock.calls).toEqual([
+      ['project/list', { cursor: null, limit: 100 }],
+      ['project/create', { idempotencyKey: 'request-key', name: 'Project', roots: [{ path: '/new/project' }] }],
+    ])
+  })
+  it('does not duplicate or rename an existing project containing the root', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ id: 'existing', name: 'Custom label', roots: [{ path: '/shared' }] }], nextCursor: null })
+    await ensureCatalogProjectRoot(rpc, '/shared', 'Different label', 'request-key')
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+  it('leaves unsupported servers on the legacy write path', async () => {
+    const rpc = vi.fn().mockRejectedValue(Object.assign(new Error('Method not found'), { code: -32601 }))
+    await ensureCatalogProjectRoot(rpc, '/project', 'Project', 'request-key')
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+  it('surfaces create failures without replaying the mutation', async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({ data: [], nextCursor: null }).mockRejectedValueOnce(new Error('timed out'))
+    await expect(ensureCatalogProjectRoot(rpc, '/project', 'Project', 'request-key')).rejects.toThrow('timed out')
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+})
 
 describe('readProjectCatalog', () => {
   it('reads every page and keeps projects with overlapping roots distinct', async () => {

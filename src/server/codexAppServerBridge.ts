@@ -13,7 +13,7 @@ import { once } from 'node:events'
 import { writeFile } from 'node:fs/promises'
 import { handleAccountRoutes } from './accountRoutes.js'
 import { buildAppServerArgs } from './appServerRuntimeConfig.js'
-import { readProjectCatalog, mapThreadProjectIds, type CatalogProject } from './projectCatalog.js'
+import { readProjectCatalog, mapThreadProjectIds, ensureCatalogProjectRoot, type CatalogProject } from './projectCatalog.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleReviewRoutes } from './reviewGit.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
@@ -5586,6 +5586,16 @@ async function persistWorkspaceRoot(workspaceRoot: string, label = ''): Promise<
   })
 }
 
+async function registerCatalogRoot(appServer: RpcExecutor, path: string, label = ''): Promise<void> {
+  await queueWorkspaceRootsMutation(async () => {
+    const canonicalPath = await realpath(path)
+    await ensureCatalogProjectRoot(
+      (method, params) => appServer.rpc(method, params), canonicalPath,
+      label.trim() || basename(canonicalPath), randomUUID(),
+    )
+  })
+}
+
 async function rollbackCreatedWorktree(
   gitRoot: string,
   worktreeCwd: string,
@@ -8031,6 +8041,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             await rollbackCreatedWorktree(gitRoot, worktreeCwd, worktreeParent)
             throw error
           }
+          // A timed-out catalog mutation may have succeeded; retain the worktree for recovery.
+          await registerCatalogRoot(appServer, worktreeCwd)
 
           setJson(res, 200, {
             data: {
@@ -8106,6 +8118,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             await rollbackCreatedWorktree(gitRoot, worktreeCwd, undefined, branchName)
             throw error
           }
+          await registerCatalogRoot(appServer, worktreeCwd)
 
           setJson(res, 200, {
             data: {
@@ -8626,6 +8639,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             return
           }
           const result = await importProjectZip(buffer, parent)
+          await registerCatalogRoot(appServer, result.projectPath)
           setJson(res, 200, { data: { path: result.projectPath, importedSessions: result.importedSessions } })
         } catch (error) {
           setJson(res, 400, { error: getErrorMessage(error, 'Failed to import project') })
@@ -8662,6 +8676,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           return
         }
 
+        await registerCatalogRoot(appServer, normalizedPath, label)
         await persistWorkspaceRoot(normalizedPath, label)
         setJson(res, 200, { data: { path: normalizedPath } })
         return
@@ -8696,6 +8711,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         const basePath = typeof payload?.basePath === 'string' ? payload.basePath.trim() : ''
         try {
           const clonedPath = await cloneGithubRepositoryIntoBase(repoUrl, basePath)
+          await registerCatalogRoot(appServer, clonedPath)
           setJson(res, 200, { data: { path: clonedPath } })
         } catch (error) {
           setJson(res, 400, { error: error instanceof Error ? error.message : 'Failed to clone GitHub repository' })
