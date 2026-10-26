@@ -355,12 +355,14 @@
                       >
                         New worktree
                       </button>
-                      <button class="project-menu-item" type="button" @click="openRenameProjectMenu(group)">
+                      <button class="project-menu-item" type="button" :disabled="isManagedProject(group.projectName)" :title="isManagedProject(group.projectName) ? 'Manage this project in Codex Desktop' : undefined" @click="openRenameProjectMenu(group)">
                         Rename project
                       </button>
                       <button
                         class="project-menu-item project-menu-item-danger"
                         type="button"
+                        :disabled="isManagedProject(group.projectName)"
+                        :title="isManagedProject(group.projectName) ? 'Manage this project in Codex Desktop' : undefined"
                         @click="onRemoveProject(group.projectName)"
                       >
                         Remove
@@ -908,6 +910,7 @@ import IconTablerTrash from '../icons/IconTablerTrash.vue'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import { useFeedbackDiagnostics } from '../../composables/useFeedbackDiagnostics'
 import { getPathLeafName, getPathParent, isAbsoluteLikePath, isProjectlessChatPath } from '../../pathUtils.js'
+import { UNASSIGNED_PROJECT } from '../../composables/projectGroups'
 import ComposerDropdown from '../content/ComposerDropdown.vue'
 import SidebarMenuRow from './SidebarMenuRow.vue'
 import { reconcilePinnedThreadIds } from './pinnedThreadUtils'
@@ -917,6 +920,7 @@ const props = defineProps<{
   projectDisplayNameById: Record<string, string>
   projectGitRepoByName: Record<string, boolean>
   projectCwdByName: Record<string, string>
+  managedProjectIds?: string[]
   selectedThreadId: string
   isLoading: boolean
   isThreadListFullyLoaded: boolean
@@ -925,6 +929,9 @@ const props = defineProps<{
 }>()
 
 const { t } = useUiLanguage()
+function isManagedProject(id: string): boolean {
+  return props.managedProjectIds?.includes(id) === true
+}
 const { recordVisibleFailure } = useFeedbackDiagnostics()
 
 const emit = defineEmits<{
@@ -1266,7 +1273,8 @@ function threadMatchesSearch(thread: UiThread): boolean {
 
 const filteredGroups = computed<UiProjectGroup[]>(() => {
   return props.groups.flatMap((group) => {
-    const threads = group.threads.filter((thread) => !isProjectlessChatPath(thread.cwd) && threadMatchesSearch(thread))
+    if (group.projectName === UNASSIGNED_PROJECT) return []
+    const threads = group.threads.filter((thread) => !(thread.projectId !== undefined ? thread.projectId === '' : isProjectlessChatPath(thread.cwd)) && threadMatchesSearch(thread))
     if (threads.length > 0) return [{ ...group, threads }]
     return !isSearchActive.value && group.threads.length === 0 ? [{ ...group, threads }] : []
   })
@@ -1293,7 +1301,7 @@ const globalThreads = computed<UiThread[]>(() => {
 })
 
 const chatThreads = computed(() => {
-  const rows = globalThreads.value.filter((thread) => isProjectlessChatPath(thread.cwd))
+  const rows = globalThreads.value.filter((thread) => thread.projectId !== undefined ? thread.projectId === '' : isProjectlessChatPath(thread.cwd))
   const timestampKey = chatSortMode.value === 'created' ? 'createdAtIso' : 'updatedAtIso'
   return rows
     .sort((first, second) => {
@@ -2347,6 +2355,7 @@ function getProjectAutomationKey(projectName: string): string {
 }
 
 function onProjectHeaderKeyDown(event: KeyboardEvent, projectName: string): void {
+  if (isManagedProject(projectName)) return
   if (!event.altKey) return
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
 
@@ -2670,6 +2679,7 @@ function setProjectGroupRef(projectName: string, element: Element | ComponentPub
 }
 
 function onProjectHandleMouseDown(event: MouseEvent, projectName: string): void {
+  if (isManagedProject(projectName)) return
   if (event.button !== 0) return
   if (isSearchActive.value) return
   if (pendingProjectDrag.value || activeProjectDrag.value) return

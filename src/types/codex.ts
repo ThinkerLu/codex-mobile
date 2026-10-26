@@ -62,6 +62,7 @@ export type UserInput = {
 
 export type UiThread = {
   id: string
+  projectId?: string
   title: string
   projectName: string
   cwd: string

@@ -1,5 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clearThreadGoal, getAvailableModelIds, getThreadDetail, getThreadGoal, resumeThread, setThreadGoal, startThreadTurn } from './codexGateway'
+import { clearThreadGoal, getAvailableModelIds, getThreadDetail, getThreadGoal, resumeThread, setThreadGoal, startThreadTurn, startThread } from './codexGateway'
+
+describe('new thread project membership', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it('assigns the selected project before returning the created thread', async () => {
+    const methods: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      const body = JSON.parse(options.body)
+      methods.push(body.method)
+      if (body.method === 'thread/metadata/update') expect(body.params).toEqual({ threadId: 'new-thread', projectId: 'selected-project' })
+      return new Response(JSON.stringify({ result: { thread: { id: 'new-thread' } } }), { status: 200 })
+    }))
+    expect((await startThread('/shared', undefined, 'selected-project')).threadId).toBe('new-thread')
+    expect(methods).toEqual(['thread/start', 'thread/metadata/update'])
+  })
+  it('reports failed membership instead of pretending creation in the project succeeded', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      const body = JSON.parse(options.body)
+      return body.method === 'thread/start'
+        ? new Response(JSON.stringify({ result: { thread: { id: 'new-thread' } } }), { status: 200 })
+        : new Response(JSON.stringify({ error: 'project no longer exists' }), { status: 502 })
+    }))
+    await expect(startThread('/shared', undefined, 'missing')).rejects.toThrow()
+  })
+})
 
 function mockRpcFetch(): { requests: Array<{ method: string, params: Record<string, unknown> }> } {
   const requests: Array<{ method: string, params: Record<string, unknown> }> = []

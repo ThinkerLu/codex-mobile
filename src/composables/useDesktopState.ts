@@ -1,5 +1,6 @@
 import type { ZenModelMetadata } from '../types/zenModels'
 import { computed, ref } from 'vue'
+import { groupDesktopProjects, UNASSIGNED_PROJECT } from './projectGroups'
 import {
 
   archiveThread,
@@ -1113,6 +1114,7 @@ function getWorkspaceProjectOrderNames(
   rootsState: WorkspaceRootsState | null,
   duplicateLeafNames: Set<string>,
 ): string[] {
+  if (rootsState?.projects) return [...rootsState.projects, ...(rootsState.remoteProjects ?? [])].map((project) => project.id)
   const remoteProjectsById = getRemoteProjectById(rootsState)
   return getWorkspaceProjectOrderPaths(rootsState).map((rootPath) => {
     if (remoteProjectsById.has(rootPath)) return rootPath
@@ -1378,6 +1380,7 @@ export function filterGroupsByWorkspaceRoots(
   groups: UiProjectGroup[],
   rootsState: WorkspaceRootsState | null,
 ): UiProjectGroup[] {
+  if (rootsState?.projects) return groupDesktopProjects(groups, rootsState.projects, rootsState.threadProjectIds, rootsState.remoteProjects)
   const duplicateLeafNames = collectDuplicateProjectLeafNames(groups, rootsState)
   const disambiguatedGroups = disambiguateProjectGroupsByCwd(groups, rootsState)
   const groupsWithWorkspaceRoots = addWorkspaceRootPlaceholderGroups(disambiguatedGroups, rootsState, duplicateLeafNames)
@@ -2190,12 +2193,13 @@ export function useDesktopState() {
     projectGroups.value = mergeThreadGroups(projectGroups.value, flaggedGroups)
   }
 
-  function insertOptimisticThread(threadId: string, cwd: string, firstMessageText: string): void {
+  function insertOptimisticThread(threadId: string, cwd: string, firstMessageText: string, projectId?: string): void {
     const nowIso = new Date().toISOString()
     const normalizedCwd = normalizePathForUi(cwd)
-    const projectName = toProjectName(normalizedCwd)
+    const projectName = projectId || toProjectName(normalizedCwd)
     const nextThread: UiThread = {
       id: threadId,
+      ...(projectId ? { projectId } : {}),
       title: toOptimisticThreadTitle(firstMessageText),
       projectName,
       cwd: normalizedCwd,
@@ -2222,6 +2226,9 @@ export function useDesktopState() {
       sourceGroups.value = [{ projectName, threads: [nextThread] }, ...sourceGroups.value]
     }
 
+    if (loadedThreadListRootsState?.projects) {
+      sourceGroups.value = groupDesktopProjects(sourceGroups.value, loadedThreadListRootsState.projects, loadedThreadListRootsState.threadProjectIds, loadedThreadListRootsState.remoteProjects)
+    }
     const nextProjectOrder = mergeProjectOrder(projectOrder.value, sourceGroups.value)
     if (!areStringArraysEqual(projectOrder.value, nextProjectOrder)) {
       projectOrder.value = nextProjectOrder
@@ -4138,6 +4145,7 @@ export function useDesktopState() {
     groups: UiProjectGroup[],
     rootsState: WorkspaceRootsState | null,
   ): UiProjectGroup[] {
+    if (rootsState?.projects) return groupDesktopProjects(groups, rootsState.projects, rootsState.threadProjectIds, rootsState.remoteProjects)
     const duplicateLeafNames = collectDuplicateProjectLeafNames(groups, rootsState)
     const disambiguatedGroups = disambiguateProjectGroupsByCwd(groups, rootsState)
     const groupsWithWorkspaceRoots = addWorkspaceRootPlaceholderGroups(disambiguatedGroups, rootsState, duplicateLeafNames)
@@ -4154,6 +4162,13 @@ export function useDesktopState() {
   }
 
   function applyThreadGroups(groups: UiProjectGroup[], rootsState: WorkspaceRootsState | null): void {
+    if (rootsState?.projects) {
+      projectDisplayNameById.value = {
+        ...projectDisplayNameById.value,
+        ...Object.fromEntries(rootsState.projects.map((project) => [project.id, project.name])),
+        [UNASSIGNED_PROJECT]: 'Unassigned',
+      }
+    }
     const visibleGroups = filterGroupsByWorkspaceRoots(groups, rootsState)
     const hasWorkspaceRootsState = Boolean(
       rootsState && (rootsState.order.length > 0 || rootsState.projectOrder.length > 0 || (rootsState.remoteProjects ?? []).length > 0),
@@ -4960,6 +4975,7 @@ export function useDesktopState() {
     imageUrls: string[] = [],
     skills: Array<{ name: string; path: string }> = [],
     fileAttachments: FileAttachment[] = [],
+    projectId?: string,
   ): Promise<string> {
     if (isUpdatingSpeedMode.value) return ''
 
@@ -4975,7 +4991,7 @@ export function useDesktopState() {
 
     try {
       try {
-        const startedThread = await startThread(targetCwd || undefined, selectedModel || undefined)
+        const startedThread = await startThread(targetCwd || undefined, selectedModel || undefined, projectId)
         threadId = startedThread.threadId
         setThreadModelId(threadId, startedThread.model)
         setThreadModelProviderId(threadId, startedThread.modelProvider || activeProviderId.value)
@@ -4983,7 +4999,7 @@ export function useDesktopState() {
       } catch (unknownError) {
         if (selectedModel && selectedModel !== MODEL_FALLBACK_ID && isUnsupportedChatGptModelError(unknownError)) {
           await applyFallbackModelSelection()
-          const fallbackThread = await startThread(targetCwd || undefined, MODEL_FALLBACK_ID)
+          const fallbackThread = await startThread(targetCwd || undefined, MODEL_FALLBACK_ID, projectId)
           threadId = fallbackThread.threadId
           setThreadModelId(threadId, fallbackThread.model)
           setThreadModelProviderId(threadId, fallbackThread.modelProvider || activeProviderId.value)
@@ -4994,7 +5010,7 @@ export function useDesktopState() {
       }
       if (!threadId) return ''
 
-      insertOptimisticThread(threadId, targetCwd, nextText || '[Image]')
+      insertOptimisticThread(threadId, targetCwd, nextText || '[Image]', projectId)
       appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments)
       blockInterruptUntilThreadIsPersisted(threadId)
       resumedThreadById.value = {
@@ -5415,6 +5431,7 @@ export function useDesktopState() {
   async function persistProjectOrderToWorkspaceRoots(): Promise<void> {
     try {
       const rootsState = await getWorkspaceRootsState()
+      if (rootsState.projects) return
       const nextState = buildWorkspaceRootsProjectOrderState(rootsState, projectOrder.value, sourceGroups.value)
 
       await setWorkspaceRootsState({

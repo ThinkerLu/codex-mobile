@@ -585,6 +585,7 @@ function toUiThread(summary: Thread): UiThread {
 
   return {
     id: summary.id,
+    ...(typeof rawSummary.projectId === 'string' ? { projectId: rawSummary.projectId } : {}),
     title: toThreadTitle(summary),
     projectName: toProjectName(cwd),
     cwd,

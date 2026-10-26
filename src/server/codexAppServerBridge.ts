@@ -13,6 +13,7 @@ import { once } from 'node:events'
 import { writeFile } from 'node:fs/promises'
 import { handleAccountRoutes } from './accountRoutes.js'
 import { buildAppServerArgs } from './appServerRuntimeConfig.js'
+import { readProjectCatalog, mapThreadProjectIds, type CatalogProject } from './projectCatalog.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleReviewRoutes } from './reviewGit.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
@@ -87,6 +88,8 @@ type ServerRequestReply = {
 }
 
 export type WorkspaceRootsState = {
+  projects?: CatalogProject[]
+  threadProjectIds?: Record<string, string>
   order: string[]
   labels: Record<string, string>
   active: string[]
@@ -5491,7 +5494,7 @@ export async function canonicalizeThreadListResponseForRead(
   }
 }
 
-async function readWorkspaceRootsState(): Promise<WorkspaceRootsState> {
+async function readWorkspaceRootsState(appServer?: RpcExecutor): Promise<WorkspaceRootsState> {
   const statePath = getCodexGlobalStatePath()
   let payload: Record<string, unknown> = {}
 
@@ -5503,13 +5506,21 @@ async function readWorkspaceRootsState(): Promise<WorkspaceRootsState> {
     payload = {}
   }
 
-  return await canonicalizeWorkspaceRootsState({
+  const state = await canonicalizeWorkspaceRootsState({
     order: normalizeStringArray(payload['electron-saved-workspace-roots']),
     labels: normalizeStringRecord(payload['electron-workspace-root-labels']),
     active: normalizeStringArray(payload['active-workspace-roots']),
     projectOrder: normalizeStringArray(payload['project-order']),
     remoteProjects: normalizeRemoteProjects(payload['remote-projects']),
   })
+  if (appServer) {
+    const projects = await readProjectCatalog((method, params) => appServer.rpc(method, params))
+    if (projects !== undefined) {
+      state.projects = projects
+      state.threadProjectIds = mapThreadProjectIds(payload, projects, getCodexHomeDir())
+    }
+  }
+  return state
 }
 
 export async function writeWorkspaceRootsState(nextState: WorkspaceRootsState): Promise<void> {
@@ -6040,7 +6051,7 @@ class AppServerProcess {
       if (!pendingRequest) return
 
       if (message.error) {
-        pendingRequest.reject(new Error(message.error.message))
+        pendingRequest.reject(Object.assign(new Error(message.error.message), { code: message.error.code }))
       } else {
         pendingRequest.resolve(message.result)
       }
@@ -7933,7 +7944,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/workspace-roots-state') {
-        const state = await readWorkspaceRootsState()
+        const state = await readWorkspaceRootsState(appServer)
         setJson(res, 200, { data: state })
         return
       }

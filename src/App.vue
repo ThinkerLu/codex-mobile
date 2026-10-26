@@ -83,6 +83,7 @@
           <SidebarThreadTree ref="sidebarThreadTreeRef" :groups="projectGroups" :project-display-name-by-id="projectDisplayNameById"
             :project-git-repo-by-name="projectGitRepoByName"
             :project-cwd-by-name="projectCwdByName"
+            :managed-project-ids="workspaceRootOptionsState.projects?.map(project => project.id)"
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
             :is-thread-list-fully-loaded="isThreadListFullyLoaded"
@@ -1551,13 +1552,14 @@ const directoryTryInFlightKey = ref('')
 let hasPendingRouteSync = false
 const hasInitialized = ref(false)
 const newThreadCwd = ref('')
+const newThreadProjectId = ref<string | undefined>()
 const newThreadRuntime = ref<'local' | 'worktree'>('local')
 const gitRepoStatusByCwd = ref<Record<string, boolean>>({})
 const gitRepoStatusRequestByCwd = new Map<string, Promise<boolean>>()
 const newWorktreeBaseBranch = ref('')
 const worktreeBranchOptions = ref<WorktreeBranchOption[]>([])
 const isLoadingWorktreeBranches = ref(false)
-const workspaceRootOptionsState = ref<{ order: string[]; labels: Record<string, string>; projectOrder: string[] }>({
+const workspaceRootOptionsState = ref<{ order: string[]; labels: Record<string, string>; projectOrder: string[]; projects?: Array<{ id: string; name: string; rootPaths: string[] }> }>({
   order: [],
   labels: {},
   projectOrder: [],
@@ -1946,6 +1948,8 @@ function getProjectOrderNameForPath(path: string): string {
 }
 
 function resolveWorkspaceRootCwd(projectName: string): string {
+  const project = workspaceRootOptionsState.value.projects?.find((item) => item.id === projectName)
+  if (project) return project.rootPaths[0] ?? ''
   const normalizedProjectName = normalizePathForUi(projectName).trim()
   if (!normalizedProjectName) return ''
   const knownPaths = [
@@ -2857,6 +2861,8 @@ function isWorktreePath(cwdRaw: string): boolean {
 }
 
 function resolvePreferredLocalCwd(projectName: string, fallbackCwd = ''): string {
+  const project = workspaceRootOptionsState.value.projects?.find((item) => item.id === projectName)
+  if (project) return project.rootPaths[0] ?? ''
   const group = projectGroups.value.find((row) => row.projectName === projectName)
   if (!group) return resolveWorkspaceRootCwd(projectName) || fallbackCwd.trim()
   const nonWorktreeThread = group.threads.find((thread) => !isWorktreePath(thread.cwd))
@@ -2865,6 +2871,7 @@ function resolvePreferredLocalCwd(projectName: string, fallbackCwd = ''): string
 }
 
 function onStartNewThread(projectName: string): void {
+  newThreadProjectId.value = workspaceRootOptionsState.value.projects?.find((item) => item.id === projectName)?.id
   const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
   const projectCwd = resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
   if (projectCwd) {
@@ -4154,8 +4161,9 @@ async function loadWorkspaceRootOptionsState(): Promise<void> {
   try {
     const state = await getWorkspaceRootsState()
     workspaceRootOptionsState.value = {
-      order: [...state.order],
-      labels: { ...state.labels },
+      projects: state.projects,
+      order: state.projects ? [...new Set(state.projects.flatMap((project) => project.rootPaths))] : [...state.order],
+      labels: { ...state.labels, ...Object.fromEntries((state.projects ?? []).flatMap((project) => project.rootPaths.map((path) => [path, project.name]))) },
       projectOrder: [...state.projectOrder],
     }
   } catch {
@@ -4978,6 +4986,7 @@ async function submitFirstMessageForNewThread(
 ): Promise<void> {
   try {
     worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
+    const selectedProject = workspaceRootOptionsState.value.projects?.find((item) => item.id === newThreadProjectId.value && item.rootPaths.includes(newThreadCwd.value))
     let targetCwd = newThreadCwd.value
     if (newThreadRuntime.value === 'worktree') {
       worktreeInitStatus.value = {
@@ -5003,7 +5012,7 @@ async function submitFirstMessageForNewThread(
       targetCwd = directory.cwd
       newThreadCwd.value = directory.cwd
     }
-    const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments)
+    const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments, selectedProject?.id)
     if (!threadId) return
     await router.replace({ name: 'thread', params: { threadId } })
     scheduleMobileConversationJumpToLatest()

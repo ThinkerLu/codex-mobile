@@ -188,6 +188,8 @@ function normalizeCollaborationModeReasoningEffort(value: ReasoningEffort | '' |
 }
 
 export type WorkspaceRootsState = {
+  projects?: Array<{ id: string; name: string; rootPaths: string[] }>
+  threadProjectIds?: Record<string, string>
   order: string[]
   labels: Record<string, string>
   active: string[]
@@ -202,6 +204,7 @@ export type WorkspaceRootsState = {
 
 let workspaceRootsStatePromise: Promise<WorkspaceRootsState> | null = null
 let cachedWorkspaceRootsState: WorkspaceRootsState | null = null
+let workspaceRootsFetchedAt = 0
 
 export type StoredQueuedMessage = {
   id: string
@@ -1687,7 +1690,7 @@ export type ForkedThread = {
   messages: UiMessage[]
 }
 
-export async function startThread(cwd?: string, model?: string): Promise<StartedThread> {
+export async function startThread(cwd?: string, model?: string, projectId?: string): Promise<StartedThread> {
   try {
     const params: Record<string, unknown> = {}
     if (typeof cwd === 'string' && cwd.trim().length > 0) {
@@ -1701,6 +1704,7 @@ export async function startThread(cwd?: string, model?: string): Promise<Started
     if (!threadId) {
       throw new Error('thread/start did not return a thread id')
     }
+    if (projectId) await callRpc('thread/metadata/update', { threadId, projectId })
     return {
       threadId,
       model: normalizeThreadModelFromPayload(payload),
@@ -2453,6 +2457,14 @@ function normalizeWorkspaceRootsState(payload: unknown): WorkspaceRootsState {
   }
 
   return {
+    ...(Array.isArray(record.projects) ? {
+      projects: record.projects.flatMap((value) => {
+        const project = asRecord(value)
+        if (!project || typeof project.id !== 'string' || typeof project.name !== 'string') return []
+        return [{ id: project.id, name: project.name, rootPaths: normalizeArray(project.rootPaths) }]
+      }),
+      threadProjectIds: Object.fromEntries(Object.entries(asRecord(record.threadProjectIds) ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+    } : {}),
     order: normalizeArray(record.order).map((value) => normalizePathForUi(value)),
     labels,
     active: normalizeArray(record.active).map((value) => normalizePathForUi(value)),
@@ -2531,13 +2543,14 @@ function normalizeThreadQueueState(value: unknown): ThreadQueueState {
 }
 
 export async function getWorkspaceRootsState(): Promise<WorkspaceRootsState> {
-  if (cachedWorkspaceRootsState) {
+  if (cachedWorkspaceRootsState && Date.now() - workspaceRootsFetchedAt < 15_000) {
     return cloneWorkspaceRootsState(cachedWorkspaceRootsState)
   }
   if (!workspaceRootsStatePromise) {
     workspaceRootsStatePromise = fetchWorkspaceRootsState()
       .then((state) => {
         cachedWorkspaceRootsState = state
+        workspaceRootsFetchedAt = Date.now()
         return state
       })
       .finally(() => {
@@ -2562,6 +2575,7 @@ async function fetchWorkspaceRootsState(): Promise<WorkspaceRootsState> {
 
 function cloneWorkspaceRootsState(state: WorkspaceRootsState): WorkspaceRootsState {
   return {
+    ...(state.projects ? { projects: state.projects.map((project) => ({ ...project, rootPaths: [...project.rootPaths] })), threadProjectIds: { ...state.threadProjectIds } } : {}),
     order: [...state.order],
     labels: { ...state.labels },
     active: [...state.active],
