@@ -1,0 +1,29 @@
+tests/projects-sidebar-new-chat/modern-project-catalog.md
+  6feaa5a82fd27ea4 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8-ntes.9",
+  "base_commit_sha": "8350bc467be4cf0d4478df2defe4dc0236da25f0",
+  "prompts": {
+    "6feaa5a82fd27ea4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16490-099f-7433-ac14-9b162fcbd33d",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "luxianke",
+      "messages": [],
+      "total_additions": 13,
+      "total_deletions": 0,
+      "accepted_lines": 13,
+      "overriden_lines": 0,
+      "per_file_stats": {
+        "tests/projects-sidebar-new-chat/modern-project-catalog.md": {
+          "additions": 13,
+          "accepted_lines": 13
+        }
+      }
+    }
+  }
+}
